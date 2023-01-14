@@ -1,15 +1,15 @@
 # tickatlab analyzR
 #tick@R
 
-tl2 %>%
-  ggplot(aes(x= Alter2, fill = ParticipatesInActiveMating))+
-  geom_bar()+
-  facet_wrap(Zuchtlinie~.)
-
-tl2 %>%
-  ggplot(aes(x= Alter2, fill = ParticipatesInActiveMating))+
-  geom_bar()+
-  facet_grid(Raum~Zuchtlinie)
+#tl2 %>%
+#  ggplot(aes(x= Alter2, fill = ParticipatesInActiveMating))+
+#  geom_bar()+
+#  facet_wrap(Zuchtlinie~.)
+#
+#tl2 %>%
+#  ggplot(aes(x= Alter2, fill = ParticipatesInActiveMating))+
+#  geom_bar()+
+#  facet_grid(Raum~Zuchtlinie)
 
 
 ## display as a table of numbers the genotypes
@@ -19,12 +19,13 @@ library(tidyverse)
 library(readxl)
 library(DT)
 
+testv <- c()
 ## change imm-obst filter
 
 ui <- fluidPage(
   
   ## Upload WSPs
-  sidebarPanel(width = 3,
+  sidebarPanel(width = 2,
                fileInput("files", "Choose Exported Tick@Lab File (.xls)", accept = ".xls", multiple = F),
                
                hr(),
@@ -43,7 +44,20 @@ ui <- fluidPage(
                          
                 ),
                 tabPanel("Future Experiments", 
-                         verbatimTextOutput("summary")
+                         fluidRow(
+                           column(2,
+                                  radioButtons("gt_select",choices = "",label = "Zuchtlinie")
+                                  ),
+                           column(2,
+                                  uiOutput("comparison"),
+                                  actionButton("submitgt",label = "Update")
+                           ),
+                           column(6,
+                                  dataTableOutput("gt_table")
+                                  )
+                         )
+                         
+                         
                 )
     )
     
@@ -107,6 +121,72 @@ server <- function(input, output, session) {
 
     updateCheckboxGroupInput(inputId = "line", choices = sort(unique(tltable()$Zuchtlinie)) )
     
+    updateRadioButtons(inputId = "gt_select", choices = sort(unique(tltable()$Zuchtlinie)))
+    
+  })
+  
+  rb <- reactiveValues()
+  
+  observeEvent(input$gt_select,{
+    vect <- tltable() %>%
+      filter(Zuchtlinie %in% input$gt_select) %>%
+      distinct(Genotyp) %>%
+      pull()
+    
+    possible_genotypes <- paste(vect,collapse = "\r\n")
+    
+    gsplit <- str_split(possible_genotypes,pattern = "\\r\\n", simplify = T)
+    gsplit2 <- as.vector(gsplit)
+    
+    
+    gt <- sapply(gsplit2, function(x)str_extract(x, pattern = "(?<=: ).+"))
+    
+    names <- sapply(gsplit2, function(x)str_extract(x,pattern = "^.*:"))
+    
+    tlist <- tibble(names, gt) %>%
+      group_by(names, gt) %>%
+      count() %>%
+      group_by(names) %>%
+      group_split()
+    
+    length(tlist)
+    
+    tlist_names <- sapply(1:length(tlist), function(x)tlist[[x]]$names[1])
+    
+    tlist_gt <- lapply(1:length(tlist), function(x)tlist[[x]]$gt)
+    
+    rb$namesn <- length(unique(names))
+    rb$tlistn <- tlist_names
+    rb$tlistgt <- tlist_gt
+    
+   # insertUI(
+   #   selector = '#gt_names',
+   #   where = "beforeEnd",
+   #   ui = tagList(
+   #     actionButton("updateMeta",class="btn btn-info", 
+   #                  label = tags$em("Update Table")),
+   #     selectInput('preset', 'Presets', c(Choose='', names(presetList)), selectize=TRUE),
+   #     textInput(inputId = "varName", 
+   #               label = tags$em("Variable Name")))
+   # )
+    
+    #https://www.r-bloggers.com/2019/09/dynamic-ui-elements-in-shiny/
+    #  https://stackoverflow.com/questions/46969448/creating-radio-buttons-from-a-loop-and-select-all-in-r-shiny
+    #
+
+  })
+  
+  output$comparison <- renderUI({
+    
+    myTabs <- lapply(1:rb$namesn, function(i) {
+      
+      checkboxGroupInput(inputId = paste0("dw",i),label = rb$tlistn[i] ,choices =   
+                     rb$tlistgt[[i]]
+      )
+    })
+    
+    
+    # do.call(tabsetPanel, myTabs)
   })
   
   output$plotzl <- renderPlot({
@@ -121,6 +201,44 @@ server <- function(input, output, session) {
     
   })
 
+  test <- reactiveVal()
+  dws <- reactiveVal()
+  
+  observeEvent(input$submitgt,{
+    
+    x <- sapply(1:rb$namesn, function(i)paste0("dw", i))
+
+    
+    for( i in 1:rb$namesn){
+      
+     if(is.null(input[[x[i]]])){
+       next
+     } else {
+       testv <- c(testv, paste0(rb$tlistn[i], " ",input[[x[i]]]))
+     }}
+      
+    testv <- paste0(testv, collapse = "|")
+    print(testv)
+    
+    tt <- tltable() %>%
+      filter(Zuchtlinie == input$gt_select) %>%
+      filter(str_detect(Genotyp, testv)) 
+    
+    test(tt)
+    
+  })
+  
+  output$gt_table<- renderDataTable({
+    
+    if(!is.null(test()) ){
+      
+      test()
+      
+    }
+    
+  },options = list(pageLength = 100))
+  
+  
 }
 
 
